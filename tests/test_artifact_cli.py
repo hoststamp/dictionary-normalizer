@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from dictionary_normalizer.artifact import build_artifact, read_artifact, refresh_sources
+from dictionary_normalizer.cli import main
+from dictionary_normalizer.errors import DictionaryNormalizerError
+from dictionary_normalizer.manifest import Manifest, SourceConfig
+
+
+def source_config(
+    *,
+    expected_sha256: str,
+    path: str = "words.txt",
+    enabled: bool = True,
+    download_url: str | None = None,
+) -> SourceConfig:
+    return SourceConfig(
+        id="sample",
+        title="Sample",
+        path=path,
+        parser_kind="plain-lines",
+        category="sample",
+        url="https://example.com",
+        retrieved="2026-05-19",
+        expected_sha256=expected_sha256,
+        license="CC0-1.0",
+        license_url="https://example.com/license",
+        attribution="Example",
+        changes="normalized",
+        notice_required=False,
+        enabled=enabled,
+        download_url=download_url,
+    )
+
+
+class ArtifactAndCliTests(unittest.TestCase):
+    def test_build_artifact_rejects_missing_input_file(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            manifest = Manifest((source_config(expected_sha256=digest),))
+            with self.assertRaises(DictionaryNormalizerError):
+                build_artifact(Path(temp_dir), manifest)
+
+    def test_build_artifact_rejects_sha256_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest((source_config(expected_sha256="0" * 64),))
+            with self.assertRaises(DictionaryNormalizerError):
+                build_artifact(root, manifest)
+
+    def test_read_artifact_rejects_non_object_json(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "artifact.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                read_artifact(path)
+
+    def test_refresh_sources_downloads_and_verifies_file_urls(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        path="nested/words.txt",
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+
+            refresh_sources(root, manifest)
+            self.assertEqual((root / "nested/words.txt").read_text(encoding="utf-8"), "alpha\n")
+
+    def test_refresh_sources_rejects_download_hash_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256="0" * 64,
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+
+            with self.assertRaises(DictionaryNormalizerError):
+                refresh_sources(root, manifest)
+
+    def test_disabled_sources_are_omitted(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest(
+                (
+                    source_config(expected_sha256=digest, enabled=False),
+                    source_config(expected_sha256=digest),
+                )
+            )
+            artifact = build_artifact(root, manifest)
+            self.assertEqual(len(artifact["meta"]["sources"]), 1)
+
+    def test_cli_validate_success_and_build_error(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(main(["--validate", str(artifact)]), 0)
+        self.assertIn("valid", out.getvalue())
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(main(["--input", "missing", "--output", "output/nope.json"]), 1)
+        self.assertIn("error:", err.getvalue())
+
+    def test_cli_validate_rejects_invalid_artifact(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "bad.json"
+            path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(main(["--validate", str(path)]), 1)
+            self.assertIn("error:", err.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
