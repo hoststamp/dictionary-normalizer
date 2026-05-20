@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import unittest
@@ -9,10 +10,10 @@ from pathlib import Path
 
 from dictionary_normalizer.artifact import build_artifact, read_artifact, write_artifact
 from dictionary_normalizer.cli import main
-from dictionary_normalizer.errors import DictionaryNormalizerError
-from dictionary_normalizer.manifest import load_manifest
+from dictionary_normalizer.manifest import Manifest, load_manifest
 from dictionary_normalizer.normalizer import load_default_blocklist
 from dictionary_normalizer.validator import validate_artifact
+from tests._fixtures import source_config
 
 
 @contextmanager
@@ -46,11 +47,42 @@ class EndToEndTests(unittest.TestCase):
             write_artifact(output, artifact)
             validate_artifact(read_artifact(output))
 
-    def test_refresh_fails_until_manifest_has_download_urls(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        manifest = load_manifest(root / "sources.toml")
-        with self.assertRaises(DictionaryNormalizerError):
-            build_artifact(root / "input", manifest, refresh=True)
+    def test_refresh_handles_mixed_refreshable_and_offline_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_dir = root / "input"
+            input_dir.mkdir()
+            offline = input_dir / "offline.txt"
+            offline.write_text("bravo\n", encoding="utf-8")
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest(
+                (
+                    source_config(
+                        source_id="refreshable",
+                        title="Refreshable",
+                        path="refreshable.txt",
+                        category="refreshable",
+                        expected_sha256=hashlib.sha256(download.read_bytes()).hexdigest(),
+                        download_url=download.as_uri(),
+                    ),
+                    source_config(
+                        source_id="offline",
+                        title="Offline",
+                        path="offline.txt",
+                        category="offline",
+                        expected_sha256=hashlib.sha256(offline.read_bytes()).hexdigest(),
+                        refreshable=False,
+                    ),
+                )
+            )
+
+            artifact = build_artifact(input_dir, manifest, refresh=True)
+
+            self.assertEqual(artifact["schema_version"], 1)
+            self.assertEqual((input_dir / "refreshable.txt").read_text(encoding="utf-8"), "alpha\n")
+            self.assertIn("refreshable", artifact["categories"])
+            self.assertIn("offline", artifact["categories"])
 
     def test_artifact_has_no_blocklisted_words(self) -> None:
         root = Path(__file__).resolve().parents[1]

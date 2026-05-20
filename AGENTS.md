@@ -72,7 +72,7 @@ Don't mutate state outside the working tree without being told to.
 - `PROMPT.md` is the authoritative product and artifact contract. Treat schema changes as breaking and update the prompt before changing emitted JSON.
 - Runtime code should stay dependency-free unless there is a clear need; dev-only tooling belongs in the `dev` extra and `requirements-dev.txt`.
 - Generated artifacts belong under `output/`. Keep `output/.gitkeep`; do not commit generated JSON unless explicitly asked.
-- `--refresh` must fail clearly unless every enabled source has a pinned `download_url` and matching SHA-256. Do not make refresh silently fall back to offline input.
+- `--refresh` downloads only refreshable sources with pinned `download_url` values and matching SHA-256. Curated local fixtures must be marked `refreshable = false`, not silently treated as downloaded inputs.
 
 ## Watch Out
 - Normalized words must remain lowercase ASCII alphabetic tokens only: `^[a-z]+$`.

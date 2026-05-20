@@ -31,6 +31,7 @@ class ManifestTests(unittest.TestCase):
             VALID_SOURCE
             + """
 enabled = false
+refreshable = false
 array = "words"
 download_url = "file:///tmp/source.txt"
 drop_words = ["Alpha"]
@@ -39,6 +40,7 @@ drop_words = ["Alpha"]
 
         source = manifest.sources[0]
         self.assertFalse(source.enabled)
+        self.assertFalse(source.refreshable)
         self.assertEqual(source.array, "words")
         self.assertEqual(source.download_url, "file:///tmp/source.txt")
         self.assertEqual(source.drop_words, ("alpha",))
@@ -67,6 +69,7 @@ drop_words = ["Alpha"]
         invalid_cases = [
             VALID_SOURCE.replace("notice_required = false", 'notice_required = "no"'),
             VALID_SOURCE + 'enabled = "yes"\n',
+            VALID_SOURCE + 'refreshable = "yes"\n',
             VALID_SOURCE + "array = 3\n",
             VALID_SOURCE + "download_url = 3\n",
             VALID_SOURCE + 'drop_words = ["ok", 3]\n',

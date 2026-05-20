@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import tempfile
 import urllib.error
 import urllib.request
@@ -21,6 +22,7 @@ from .validator import validate_artifact
 SCHEMA_VERSION = 1
 ALLOWED_DOWNLOAD_SCHEMES = {"https", "file"}
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def build_artifact(input_dir: Path, manifest: Manifest, *, refresh: bool = False) -> dict[str, Any]:
@@ -99,14 +101,21 @@ def read_artifact(path: Path) -> dict[str, Any]:
 
 def refresh_sources(input_dir: Path, manifest: Manifest) -> None:
     enabled_sources = [source for source in manifest.sources if source.enabled]
-    missing = [source.id for source in enabled_sources if source.download_url is None]
+    missing = [
+        source.id
+        for source in enabled_sources
+        if source.refreshable and source.download_url is None
+    ]
     if missing:
         raise DictionaryNormalizerError(
-            "--refresh requires download_url for every enabled source; missing: "
+            "--refresh requires download_url for every refreshable source; missing: "
             + ", ".join(missing)
         )
 
     for source in enabled_sources:
+        if not source.refreshable:
+            logger.info("skipping non-refreshable source %s", source.id)
+            continue
         if source.download_url is None:
             raise DictionaryNormalizerError(f"{source.id}: missing download_url")
         validate_download_url(source)

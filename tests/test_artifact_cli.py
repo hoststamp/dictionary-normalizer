@@ -14,33 +14,8 @@ from dictionary_normalizer import artifact as artifact_module
 from dictionary_normalizer.artifact import build_artifact, read_artifact, refresh_sources
 from dictionary_normalizer.cli import main
 from dictionary_normalizer.errors import DictionaryNormalizerError
-from dictionary_normalizer.manifest import Manifest, SourceConfig
-
-
-def source_config(
-    *,
-    expected_sha256: str,
-    path: str = "words.txt",
-    enabled: bool = True,
-    download_url: str | None = None,
-) -> SourceConfig:
-    return SourceConfig(
-        id="sample",
-        title="Sample",
-        path=path,
-        parser_kind="plain-lines",
-        category="sample",
-        url="https://example.com",
-        retrieved="2026-05-19",
-        expected_sha256=expected_sha256,
-        license="CC0-1.0",
-        license_url="https://example.com/license",
-        attribution="Example",
-        changes="normalized",
-        notice_required=False,
-        enabled=enabled,
-        download_url=download_url,
-    )
+from dictionary_normalizer.manifest import Manifest
+from tests._fixtures import source_config
 
 
 class ArtifactAndCliTests(unittest.TestCase):
@@ -115,6 +90,26 @@ class ArtifactAndCliTests(unittest.TestCase):
             with self.assertRaises(DictionaryNormalizerError):
                 refresh_sources(root, manifest)
             self.assertFalse((root / "words.txt").exists())
+
+    def test_refresh_sources_skips_non_refreshable_sources(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest(
+            (
+                source_config(
+                    expected_sha256=digest,
+                    refreshable=False,
+                ),
+            )
+        )
+        with TemporaryDirectory() as temp_dir:
+            refresh_sources(Path(temp_dir), manifest)
+            self.assertFalse((Path(temp_dir) / "words.txt").exists())
+
+    def test_refresh_sources_requires_urls_for_refreshable_sources(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest((source_config(expected_sha256=digest),))
+        with TemporaryDirectory() as temp_dir, self.assertRaises(DictionaryNormalizerError):
+            refresh_sources(Path(temp_dir), manifest)
 
     def test_refresh_sources_rejects_unsupported_url_schemes(self) -> None:
         digest = hashlib.sha256(b"alpha\n").hexdigest()

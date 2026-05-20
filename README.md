@@ -36,8 +36,10 @@ dictionary-normalizer --refresh
 ```
 
 `--refresh` requires every enabled source in `sources.toml` to have a
-`download_url`, and every download must match the pinned SHA-256. Offline runs
-do not need network access.
+`download_url`, unless the source is marked `refreshable = false`. Every
+download must match the pinned SHA-256. Curated local fixtures such as the
+extracted corpora lists and NATO phonetic list are skipped during refresh.
+Offline runs do not need network access.
 
 ## Development
 

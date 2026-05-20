@@ -24,6 +24,7 @@ class SourceConfig:
     changes: str
     notice_required: bool
     enabled: bool = True
+    refreshable: bool = True
     array: str | None = None
     download_url: str | None = None
     drop_words: tuple[str, ...] = field(default_factory=tuple)
@@ -70,6 +71,10 @@ def _source_from_toml(index: int, raw: Any) -> SourceConfig:
     if not isinstance(enabled, bool):
         raise ManifestError(f"source #{index}: enabled must be boolean")
 
+    refreshable = raw.get("refreshable", True)
+    if not isinstance(refreshable, bool):
+        raise ManifestError(f"source #{index}: refreshable must be boolean")
+
     array = raw.get("array")
     if array is not None and not isinstance(array, str):
         raise ManifestError(f"source #{index}: array must be a string")
@@ -99,6 +104,7 @@ def _source_from_toml(index: int, raw: Any) -> SourceConfig:
         changes=require_str("changes"),
         notice_required=notice_required,
         enabled=enabled,
+        refreshable=refreshable,
         array=array,
         download_url=download_url,
         drop_words=tuple(word.lower() for word in drop_words_raw),
