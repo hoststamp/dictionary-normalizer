@@ -7,7 +7,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from urllib.error import URLError
 
+from dictionary_normalizer import artifact as artifact_module
 from dictionary_normalizer.artifact import build_artifact, read_artifact, refresh_sources
 from dictionary_normalizer.cli import main
 from dictionary_normalizer.errors import DictionaryNormalizerError
@@ -47,6 +50,19 @@ class ArtifactAndCliTests(unittest.TestCase):
             manifest = Manifest((source_config(expected_sha256=digest),))
             with self.assertRaises(DictionaryNormalizerError):
                 build_artifact(Path(temp_dir), manifest)
+
+    def test_build_artifact_rejects_paths_outside_input_dir(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            outside = root.parent / f"{root.name}-outside.txt"
+            try:
+                outside.write_text("alpha\n", encoding="utf-8")
+                digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+                manifest = Manifest((source_config(expected_sha256=digest, path="../outside.txt"),))
+                with self.assertRaises(DictionaryNormalizerError):
+                    build_artifact(root, manifest)
+            finally:
+                outside.unlink(missing_ok=True)
 
     def test_build_artifact_rejects_sha256_mismatch(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -98,6 +114,71 @@ class ArtifactAndCliTests(unittest.TestCase):
 
             with self.assertRaises(DictionaryNormalizerError):
                 refresh_sources(root, manifest)
+            self.assertFalse((root / "words.txt").exists())
+
+    def test_refresh_sources_rejects_unsupported_url_schemes(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        for url in ("http://example.com/words.txt", "ftp://example.com/words.txt", "words.txt"):
+            with self.subTest(url=url), TemporaryDirectory() as temp_dir:
+                manifest = Manifest((source_config(expected_sha256=digest, download_url=url),))
+                with self.assertRaises(DictionaryNormalizerError):
+                    refresh_sources(Path(temp_dir), manifest)
+
+    def test_refresh_sources_rejects_paths_outside_input_dir(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        path="../outside.txt",
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+            with self.assertRaises(DictionaryNormalizerError):
+                refresh_sources(root, manifest)
+
+    def test_refresh_sources_wraps_download_errors(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest(
+            (
+                source_config(
+                    expected_sha256=digest,
+                    download_url="https://example.com/words.txt",
+                ),
+            )
+        )
+        with (
+            TemporaryDirectory() as temp_dir,
+            patch("urllib.request.urlopen", side_effect=URLError("offline")),
+            self.assertRaises(DictionaryNormalizerError),
+        ):
+            refresh_sources(Path(temp_dir), manifest)
+
+    def test_refresh_sources_rejects_oversized_downloads(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+            with (
+                patch.object(artifact_module, "MAX_DOWNLOAD_BYTES", 1),
+                self.assertRaises(DictionaryNormalizerError),
+            ):
+                refresh_sources(root, manifest)
+            self.assertFalse((root / "words.txt").exists())
 
     def test_disabled_sources_are_omitted(self) -> None:
         digest = hashlib.sha256(b"alpha\n").hexdigest()

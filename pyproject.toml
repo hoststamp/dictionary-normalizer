@@ -53,5 +53,4 @@ show_missing = true
 skip_covered = true
 exclude_lines = [
   "if __name__ == .__main__.:",
-  "raise SystemExit\\(main\\(\\)\\)",
 ]

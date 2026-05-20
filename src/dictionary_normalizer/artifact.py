@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
+import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import __version__
 from .errors import DictionaryNormalizerError
@@ -16,6 +19,8 @@ from .parsers import parse_source
 from .validator import validate_artifact
 
 SCHEMA_VERSION = 1
+ALLOWED_DOWNLOAD_SCHEMES = {"https", "file"}
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 
 def build_artifact(input_dir: Path, manifest: Manifest, *, refresh: bool = False) -> dict[str, Any]:
@@ -31,7 +36,7 @@ def build_artifact(input_dir: Path, manifest: Manifest, *, refresh: bool = False
         if not source.enabled:
             continue
 
-        source_path = input_dir / source.path
+        source_path = source_path_under(input_dir, source)
         if not source_path.exists():
             raise DictionaryNormalizerError(f"{source.id}: input file not found: {source_path}")
 
@@ -102,18 +107,12 @@ def refresh_sources(input_dir: Path, manifest: Manifest) -> None:
         )
 
     for source in enabled_sources:
-        assert source.download_url is not None
-        target = input_dir / source.path
+        if source.download_url is None:
+            raise DictionaryNormalizerError(f"{source.id}: missing download_url")
+        validate_download_url(source)
+        target = source_path_under(input_dir, source)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(source.download_url, timeout=30) as response:
-            payload = response.read()
-        digest = hashlib.sha256(payload).hexdigest()
-        if digest != source.expected_sha256:
-            raise DictionaryNormalizerError(
-                f"{source.id}: downloaded sha256 mismatch: "
-                f"expected {source.expected_sha256}, got {digest}"
-            )
-        target.write_bytes(payload)
+        download_to_tempfile(source, target)
 
 
 def source_record(source: SourceConfig, sha256: str) -> dict[str, Any]:
@@ -137,3 +136,69 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def source_path_under(input_dir: Path, source: SourceConfig) -> Path:
+    input_root = input_dir.resolve()
+    source_path = (input_root / source.path).resolve()
+    if not source_path.is_relative_to(input_root):
+        raise DictionaryNormalizerError(f"{source.id}: path escapes input directory: {source.path}")
+    return source_path
+
+
+def validate_download_url(source: SourceConfig) -> None:
+    download_url = source.download_url
+    if download_url is None:
+        raise DictionaryNormalizerError(f"{source.id}: missing download_url")
+    scheme = urlsplit(download_url).scheme.lower()
+    if scheme not in ALLOWED_DOWNLOAD_SCHEMES:
+        raise DictionaryNormalizerError(
+            f"{source.id}: unsupported download_url scheme: {scheme or '<none>'}"
+        )
+
+
+def download_to_tempfile(source: SourceConfig, target: Path) -> str:
+    download_url = source.download_url
+    if download_url is None:
+        raise DictionaryNormalizerError(f"{source.id}: missing download_url")
+    digest = hashlib.sha256()
+    total = 0
+    temp_path: Path | None = None
+    try:
+        with urllib.request.urlopen(download_url, timeout=30) as response:
+            final_scheme = urlsplit(response.geturl()).scheme.lower()
+            if final_scheme not in ALLOWED_DOWNLOAD_SCHEMES:
+                raise DictionaryNormalizerError(
+                    f"{source.id}: unsupported redirected download_url scheme: "
+                    f"{final_scheme or '<none>'}"
+                )
+            with tempfile.NamedTemporaryFile("wb", delete=False, dir=target.parent) as temp:
+                temp_path = Path(temp.name)
+                while chunk := response.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD_BYTES:
+                        raise DictionaryNormalizerError(
+                            f"{source.id}: download exceeds {MAX_DOWNLOAD_BYTES} bytes"
+                        )
+                    digest.update(chunk)
+                    temp.write(chunk)
+    except DictionaryNormalizerError:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise DictionaryNormalizerError(f"{source.id}: download failed: {exc}") from exc
+
+    if temp_path is None:
+        raise DictionaryNormalizerError(f"{source.id}: download did not produce a file")
+    actual_sha256 = digest.hexdigest()
+    if actual_sha256 != source.expected_sha256:
+        temp_path.unlink(missing_ok=True)
+        raise DictionaryNormalizerError(
+            f"{source.id}: downloaded sha256 mismatch: "
+            f"expected {source.expected_sha256}, got {actual_sha256}"
+        )
+    temp_path.replace(target)
+    return actual_sha256

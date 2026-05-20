@@ -18,6 +18,7 @@ from dictionary_normalizer.parsers import (
 class ParserTests(unittest.TestCase):
     def test_go_array(self) -> None:
         text = """
+        const unrelated = "not-a-word"
         var words = []string{
             "alpha",
             "beta",

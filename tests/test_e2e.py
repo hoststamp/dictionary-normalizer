@@ -68,9 +68,21 @@ class EndToEndTests(unittest.TestCase):
 
     def test_cli_uses_default_output_path(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        with working_directory(root):
-            self.assertEqual(main([]), 0)
-            self.assertTrue((root / "output/artifact.json").exists())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            with working_directory(temp_root):
+                self.assertEqual(
+                    main(
+                        [
+                            "--input",
+                            str(root / "input"),
+                            "--manifest",
+                            str(root / "sources.toml"),
+                        ]
+                    ),
+                    0,
+                )
+                self.assertTrue((temp_root / "output/artifact.json").exists())
 
 
 if __name__ == "__main__":

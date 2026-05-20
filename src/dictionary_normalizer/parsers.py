@@ -31,8 +31,8 @@ def parse_go_array(text: str, var_name: str) -> list[str]:
         raise ParserError(f"go array {var_name!r} not found")
 
     depth = 0
-    end = match.end() - 1
-    for end in range(match.end() - 1, len(text)):
+    open_brace = match.end() - 1
+    for end in range(open_brace, len(text)):
         if text[end] == "{":
             depth += 1
         elif text[end] == "}":
@@ -42,7 +42,7 @@ def parse_go_array(text: str, var_name: str) -> list[str]:
     else:
         raise ParserError(f"go array {var_name!r} is not closed")
 
-    body = text[match.start() : end]
+    body = text[open_brace + 1 : end]
     return re.findall(r'"([^"]+)"', body)
 
 

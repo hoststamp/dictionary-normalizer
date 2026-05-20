@@ -130,6 +130,7 @@ def normalize_words(
 
 
 def bucket_by_length(words: list[str]) -> dict[str, list[str]]:
+    """Bucket words by exact length without assuming caller ordering."""
     buckets: dict[str, list[str]] = {}
     for word in words:
         buckets.setdefault(str(len(word)), []).append(word)
