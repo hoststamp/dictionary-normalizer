@@ -1,0 +1,146 @@
+Pacific
+Atlantic
+Indian
+Southern
+Arctic
+Amundsen Gulf
+Baffin Bay
+Barents Sea
+Beaufort Sea
+Chukchi Sea
+East Siberian Sea
+Greenland Sea
+Hudson Bay
+James Bay
+Kara Sea
+Kara Strait
+Laptev Sea
+Lincoln Sea
+Prince Gustav Adolf Sea
+Pechora Sea
+Wandel Sea
+White Sea
+Amundsen Sea
+Bass Strait
+Bellingshausen Sea
+Cooperation Sea
+Cosmonauts Sea
+Davis Sea
+D'Urville Sea
+Drake Passage
+Great Australian Bight
+Gulf St Vincent
+King Haakon VII Sea
+Lazarev Sea
+Mawson Sea
+Riiser-Larsen Sea
+Ross Sea
+Scotia Sea
+Somov Sea
+Spencer Gulf
+Weddell Sea
+Andaman Sea
+Arabian Sea
+Bay of Bengal
+Gulf of Aden
+Gulf of Oman
+Laccadive Sea
+Mozambique Channel
+Persian Gulf
+Red Sea
+Timor Sea
+Arafura Sea
+Bali Sea
+Banda Sea
+Bering Sea
+Bismarck Sea
+Bohai Sea
+Bohol Sea
+Mindanao Sea
+Camotes Sea
+Celebes Sea
+Ceram Sea
+Chilean Sea
+Sea of Chiloé
+Coral Sea
+East China Sea
+Flores Sea
+Gulf of Alaska
+Gulf of California
+Sea of Cortés
+Gulf of Carpentaria
+Gulf of Thailand
+Halmahera Sea
+Java Sea
+Koro Sea
+Mar de Grau
+Molucca Sea
+Philippine Sea
+Salish Sea
+Savu Sea
+Sea of Japan
+Sea of Okhotsk
+Seto Inland Sea
+Sibuyan Sea
+Solomon Sea
+South China Sea
+Sulu Sea
+Tasman Sea
+Visayan Sea
+Yellow Sea
+Aral Sea
+Caspian Sea
+Dead Sea
+Salton Sea
+Baltic Sea
+Archipelago Sea
+Bothnian Sea
+Central Baltic Sea
+Gulf of Bothnia
+Gulf of Finland
+Gulf of Riga
+Oresund Strait
+Sea of Ĺland
+Mediterranean Sea
+Aegean Sea
+Mirtoon Sea
+Sea of Crete
+Thracian Sea
+Adriatic Sea
+Alboran Sea
+Balearic Sea
+Catalan Sea
+Cilician Sea
+Gulf of Sidra
+Ionian Sea
+Levantine Sea
+Libyan Sea
+Ligurian Sea
+Sea of Sardinia
+Sea of Sicily
+Tyrrhenian Sea
+Argentine Sea
+Bay of Biscay
+Bay of Campeche
+Bay of Fundy
+Black Sea
+Caribbean Sea
+Celtic Sea
+Chesapeake Bay
+Davis Strait
+Denmark Strait
+English Channel
+Gulf of Guinea
+Gulf of Maine
+Gulf of Mexico
+Gulf of St. Lawrence
+Gulf of Venezuela
+Irish Sea
+Labrador Sea
+Marmara Sea
+North Sea
+Norwegian Sea
+Sargasso Sea
+Sea of Azov
+Sea of the Hebrides
+Wadden Sea

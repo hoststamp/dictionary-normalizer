@@ -1,0 +1,19 @@
+# Local agent scratch workspace. Plans, drafts, transcripts, working notes.
+# Never referenced from committed source, docs, or skill files.
+.anvilkit/
+
+/.venv/
+/build/
+/dist/
+*.egg-info/
+/.mypy_cache/
+/.pytest_cache/
+/.ruff_cache/
+/.coverage*
+/htmlcov/
+/artifact.json
+/output/*
+!/output/.gitkeep
+!/output/artifact.json
+__pycache__/
+*.py[cod]
