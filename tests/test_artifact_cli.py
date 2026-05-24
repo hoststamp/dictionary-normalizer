@@ -12,7 +12,13 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 from dictionary_normalizer import artifact as artifact_module
-from dictionary_normalizer.artifact import build_artifact, read_artifact, refresh_sources
+from dictionary_normalizer.artifact import (
+    alpha_tokens,
+    blocked_word_table,
+    build_artifact,
+    read_artifact,
+    refresh_sources,
+)
 from dictionary_normalizer.cli import main
 from dictionary_normalizer.errors import DictionaryNormalizerError
 from dictionary_normalizer.manifest import Manifest
@@ -220,6 +226,15 @@ class ArtifactAndCliTests(unittest.TestCase):
             self.assertIn("sample", artifact["sources"])
             self.assertIn("hoststamp-server-name-blocklist", artifact["sources"])
             self.assertIn("sqids-default-blocklist", artifact["sources"])
+
+    def test_blocked_word_table_does_not_drive_dictionary_exclusions(self) -> None:
+        blocklist_versions = {
+            1: {"safety": ["alpha"]},
+            2: {"safety": ["alpha", "bravo"]},
+        }
+
+        self.assertEqual(blocked_word_table(blocklist_versions), ["alpha", "bravo"])
+        self.assertEqual(alpha_tokens(blocklist_versions[1]), {"alpha"})
 
     def test_cli_validate_success_and_build_error(self) -> None:
         repo = Path(__file__).resolve().parents[1]

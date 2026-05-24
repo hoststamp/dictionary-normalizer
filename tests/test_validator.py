@@ -182,9 +182,6 @@ class ValidatorTests(unittest.TestCase):
             lambda artifact: artifact["words"].update(
                 {"blocked": [encode_blocked_token("crack"), encode_blocked_token("b00b")]}
             ),
-            lambda artifact: artifact["words"].update(
-                {"allowed": ["alpha"], "blocked": [encode_blocked_token("alpha")]}
-            ),
         ]
         self.assert_invalid_cases(invalid_cases, refresh=False)
 
@@ -310,6 +307,24 @@ class ValidatorTests(unittest.TestCase):
             for word_id in artifact["blocklist_versions"]["2"]["sources"]["safety"]
         ]
         self.assertEqual(blocked_words, ["b00b", "crack"])
+
+    def test_future_blocklist_can_overlap_older_allowed_words(self) -> None:
+        artifact = valid_artifact()
+        artifact["words"]["blocked"].append(encode_blocked_token("delta"))
+        artifact["blocklist_versions"]["2"]["sources"]["safety"].append(2)
+        refresh_hashes(artifact)
+
+        validate_artifact(artifact)
+        v1_words = [
+            artifact["words"]["allowed"][word_id]
+            for word_id in artifact["dictionary_versions"]["1"]["categories"]["adjective"]
+        ]
+        blocked_words = [
+            decode_blocked_token(artifact["words"]["blocked"][word_id])
+            for word_id in artifact["blocklist_versions"]["2"]["sources"]["safety"]
+        ]
+        self.assertIn("delta", v1_words)
+        self.assertIn("delta", blocked_words)
 
     def test_rejects_non_rfc1123_word_when_called_directly(self) -> None:
         class FakeWordRe:

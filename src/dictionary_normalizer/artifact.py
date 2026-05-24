@@ -36,6 +36,7 @@ SQIDS_BLOCKLIST_RESOURCE = "sqids-default-blocklist-0.4.2.txt"
 ALLOWED_DOWNLOAD_SCHEMES = {"https", "file"}
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 logger = logging.getLogger(__name__)
+BlocklistSources = dict[str, list[str]]
 
 
 def build_artifact(
@@ -48,11 +49,19 @@ def build_artifact(
     if refresh:
         refresh_sources(input_dir, manifest)
 
-    server_blocklist = normalize_words(sorted(load_blocklist()), settings=DEFAULT_SETTINGS)
-    sqids_blocklist = load_sqids_blocklist()
-    blocked_tokens = sorted(set(server_blocklist) | set(sqids_blocklist))
+    blocklist_version_sources: dict[int, BlocklistSources] = {
+        DEFAULT_BLOCKLIST_VERSION: {
+            SERVER_BLOCKLIST_SOURCE_ID: normalize_words(
+                sorted(load_blocklist()), settings=DEFAULT_SETTINGS
+            ),
+            SQIDS_BLOCKLIST_SOURCE_ID: load_sqids_blocklist(),
+        }
+    }
+    blocked_tokens = blocked_word_table(blocklist_version_sources)
     blocked_token_ids = {token: index for index, token in enumerate(blocked_tokens)}
-    blocked_allowed_words = {token for token in blocked_tokens if token.isalpha()}
+    dictionary_v1_excluded_words = alpha_tokens(
+        blocklist_version_sources[DEFAULT_BLOCKLIST_VERSION]
+    )
     category_words: dict[str, set[str]] = defaultdict(set)
     category_source_ids: dict[str, list[str]] = defaultdict(list)
     source_records: dict[str, dict[str, Any]] = blocklist_source_records()
@@ -81,7 +90,7 @@ def build_artifact(
 
         if words:
             category_words[source.category].update(
-                word for word in words if word not in blocked_allowed_words
+                word for word in words if word not in dictionary_v1_excluded_words
             )
             category_source_ids[source.category].append(source.id)
 
@@ -114,14 +123,10 @@ def build_artifact(
         {category: sorted(words) for category, words in sorted(category_words.items()) if words},
     )
 
-    blocklist_sources = {
-        SERVER_BLOCKLIST_SOURCE_ID: [
-            blocked_token_ids[token] for token in server_blocklist if token in blocked_token_ids
-        ],
-        SQIDS_BLOCKLIST_SOURCE_ID: [
-            blocked_token_ids[token] for token in sqids_blocklist if token in blocked_token_ids
-        ],
-    }
+    blocklist_sources = blocklist_source_ids(
+        blocklist_version_sources[DEFAULT_BLOCKLIST_VERSION],
+        blocked_token_ids,
+    )
     blocklist_version = {
         "label": DEFAULT_BLOCKLIST_LABEL,
         "sources": blocklist_sources,
@@ -247,6 +252,30 @@ def load_sqids_blocklist() -> list[str]:
         if line.strip() and not line.startswith("#")
     ]
     return sorted(set(tokens))
+
+
+def blocked_word_table(blocklist_versions: dict[int, BlocklistSources]) -> list[str]:
+    return sorted(
+        {
+            token
+            for sources in blocklist_versions.values()
+            for tokens in sources.values()
+            for token in tokens
+        }
+    )
+
+
+def alpha_tokens(blocklist_sources: BlocklistSources) -> set[str]:
+    return {token for tokens in blocklist_sources.values() for token in tokens if token.isalpha()}
+
+
+def blocklist_source_ids(
+    blocklist_sources: BlocklistSources, blocked_token_ids: dict[str, int]
+) -> dict[str, list[int]]:
+    return {
+        source_id: [blocked_token_ids[token] for token in tokens if token in blocked_token_ids]
+        for source_id, tokens in blocklist_sources.items()
+    }
 
 
 def sha256_resource(name: str) -> str:

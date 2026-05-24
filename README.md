@@ -78,7 +78,9 @@ The generated JSON shape contains separate `words.allowed` and encoded
 `blocklist_versions`, default version numbers, normalization metadata, and a
 source attribution map. Allowed words are lowercase ASCII alphabetic tokens
 only: `^[a-z]+$`. Blocked tokens decode to lowercase base36 and are
-base64url-encoded without padding in the artifact.
+base64url-encoded without padding in the artifact. The global word tables are
+interning tables for version indexes, so future blocklist versions may contain
+tokens that also remain in `words.allowed` for older dictionary versions.
 
 Dictionary and blocklist version hashes are deterministic hashes of logical
 content, not JSON formatting. Released hashes are pinned in
@@ -96,7 +98,7 @@ version indexes, source attribution metadata, and version hashes.
 Profile config should store `dictionary_version`, `blocklist_version`,
 category/length settings, and resolved word-pool hashes. Generation resolves
 candidate pools by dictionary version, category, and length. It should use the
-selected blocklist version's decoded tokens for suffix/Sqids filtering and as
-the invariant that allowed words are not blocked. Old profiles fail closed
+selected blocklist version's decoded tokens for suffix/Sqids filtering and for
+removing blocked candidates from the resolved pool. Old profiles fail closed
 only when their selected dictionary/blocklist version hash or resolved pool
 hash no longer matches; unrelated new versions do not invalidate them.

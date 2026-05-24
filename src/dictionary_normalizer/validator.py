@@ -147,9 +147,6 @@ def _validate_words(value: Any) -> tuple[list[str], list[str]]:
     _reject_unknown_fields(value, WORDS_FIELDS, "words")
     allowed = _validate_allowed_words(value.get("allowed"))
     blocked = _validate_blocked_words(value.get("blocked"))
-    overlap = sorted(set(allowed) & set(blocked))
-    if overlap:
-        raise ValidationError(f"words.allowed contains blocked tokens: {', '.join(overlap)}")
     return allowed, blocked
 
 
