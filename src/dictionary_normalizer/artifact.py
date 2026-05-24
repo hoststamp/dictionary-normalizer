@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import UTC, datetime
+from importlib import resources
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -15,24 +16,46 @@ from urllib.parse import urlsplit
 from . import __version__
 from .errors import DictionaryNormalizerError
 from .manifest import Manifest, SourceConfig
-from .normalizer import DEFAULT_SETTINGS, bucket_by_length, load_blocklist, normalize_words
+from .normalizer import DEFAULT_SETTINGS, load_blocklist, normalize_words
 from .parsers import parse_source
-from .validator import validate_artifact
+from .validator import (
+    blocklist_version_hash,
+    dictionary_version_hash,
+    encode_blocked_token,
+    validate_artifact,
+)
 
 SCHEMA_VERSION = 1
+DEFAULT_DICTIONARY_VERSION = 1
+DEFAULT_BLOCKLIST_VERSION = 1
+DEFAULT_DICTIONARY_LABEL = "hoststamp-dictionary-v1"
+DEFAULT_BLOCKLIST_LABEL = "server-name-safety-v1"
+SERVER_BLOCKLIST_SOURCE_ID = "hoststamp-server-name-blocklist"
+SQIDS_BLOCKLIST_SOURCE_ID = "sqids-default-blocklist"
+SQIDS_BLOCKLIST_RESOURCE = "sqids-default-blocklist-0.4.2.txt"
 ALLOWED_DOWNLOAD_SCHEMES = {"https", "file"}
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 
-def build_artifact(input_dir: Path, manifest: Manifest, *, refresh: bool = False) -> dict[str, Any]:
+def build_artifact(
+    input_dir: Path,
+    manifest: Manifest,
+    *,
+    refresh: bool = False,
+    released_hashes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if refresh:
         refresh_sources(input_dir, manifest)
 
-    blocklist = load_blocklist()
+    server_blocklist = normalize_words(sorted(load_blocklist()), settings=DEFAULT_SETTINGS)
+    sqids_blocklist = load_sqids_blocklist()
+    blocked_tokens = sorted(set(server_blocklist) | set(sqids_blocklist))
+    blocked_token_ids = {token: index for index, token in enumerate(blocked_tokens)}
+    blocked_allowed_words = {token for token in blocked_tokens if token.isalpha()}
     category_words: dict[str, set[str]] = defaultdict(set)
     category_source_ids: dict[str, list[str]] = defaultdict(list)
-    source_records: list[dict[str, Any]] = []
+    source_records: dict[str, dict[str, Any]] = blocklist_source_records()
 
     for source in manifest.sources:
         if not source.enabled:
@@ -53,37 +76,86 @@ def build_artifact(input_dir: Path, manifest: Manifest, *, refresh: bool = False
         words = normalize_words(
             raw_words,
             settings=DEFAULT_SETTINGS,
-            blocklist=blocklist,
             drop_words=set(source.drop_words),
         )
 
         if words:
-            category_words[source.category].update(words)
+            category_words[source.category].update(
+                word for word in words if word not in blocked_allowed_words
+            )
             category_source_ids[source.category].append(source.id)
 
-        source_records.append(source_record(source, raw_sha256))
+        source_records[source.id] = source_record(source, raw_sha256)
 
+    allowed_words = sorted(set().union(*category_words.values()))
+    allowed_word_ids = {word: index for index, word in enumerate(allowed_words)}
     categories = {
-        category: {
-            "source_ids": sorted(set(category_source_ids[category])),
-            "lengths": bucket_by_length(sorted(words)),
-        }
+        category: [allowed_word_ids[word] for word in sorted(words)]
         for category, words in sorted(category_words.items())
         if words
     }
+    dictionary_sources = sorted(
+        {
+            source_id
+            for source_ids in category_source_ids.values()
+            for source_id in source_ids
+            if source_id in source_records
+        }
+    )
+    dictionary_version = {
+        "label": DEFAULT_DICTIONARY_LABEL,
+        "sources": dictionary_sources,
+        "categories": categories,
+    }
+    dictionary_version["hash"] = dictionary_version_hash(
+        DEFAULT_DICTIONARY_VERSION,
+        DEFAULT_DICTIONARY_LABEL,
+        dictionary_sources,
+        {category: sorted(words) for category, words in sorted(category_words.items()) if words},
+    )
+
+    blocklist_sources = {
+        SERVER_BLOCKLIST_SOURCE_ID: [
+            blocked_token_ids[token] for token in server_blocklist if token in blocked_token_ids
+        ],
+        SQIDS_BLOCKLIST_SOURCE_ID: [
+            blocked_token_ids[token] for token in sqids_blocklist if token in blocked_token_ids
+        ],
+    }
+    blocklist_version = {
+        "label": DEFAULT_BLOCKLIST_LABEL,
+        "sources": blocklist_sources,
+    }
+    blocklist_version["hash"] = blocklist_version_hash(
+        DEFAULT_BLOCKLIST_VERSION,
+        DEFAULT_BLOCKLIST_LABEL,
+        {
+            source_id: [blocked_tokens[token_id] for token_id in token_ids]
+            for source_id, token_ids in blocklist_sources.items()
+        },
+    )
 
     generated = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     artifact: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "meta": {
-            "generated": generated,
-            "generator": f"dictionary-normalizer {__version__}",
-            "normalization": DEFAULT_SETTINGS.as_json(),
-            "sources": source_records,
+        "generated": generated,
+        "generator": f"dictionary-normalizer {__version__}",
+        "normalization": DEFAULT_SETTINGS.as_json(),
+        "default_dictionary_version": DEFAULT_DICTIONARY_VERSION,
+        "default_blocklist_version": DEFAULT_BLOCKLIST_VERSION,
+        "words": {
+            "allowed": allowed_words,
+            "blocked": [encode_blocked_token(token) for token in blocked_tokens],
         },
-        "categories": categories,
+        "dictionary_versions": {
+            str(DEFAULT_DICTIONARY_VERSION): dictionary_version,
+        },
+        "blocklist_versions": {
+            str(DEFAULT_BLOCKLIST_VERSION): blocklist_version,
+        },
+        "sources": dict(sorted(source_records.items())),
     }
-    validate_artifact(artifact)
+    validate_artifact(artifact, released_hashes=released_hashes)
     return artifact
 
 
@@ -126,7 +198,6 @@ def refresh_sources(input_dir: Path, manifest: Manifest) -> None:
 
 def source_record(source: SourceConfig, sha256: str) -> dict[str, Any]:
     return {
-        "id": source.id,
         "title": source.title,
         "url": source.url,
         "retrieved": source.retrieved,
@@ -137,6 +208,50 @@ def source_record(source: SourceConfig, sha256: str) -> dict[str, Any]:
         "changes": source.changes,
         "notice_required": source.notice_required,
     }
+
+
+def blocklist_source_records() -> dict[str, dict[str, Any]]:
+    return {
+        SERVER_BLOCKLIST_SOURCE_ID: {
+            "title": "Hoststamp server-name safety blocklist",
+            "url": "https://github.com/hoststamp/hoststamp",
+            "retrieved": "2026-05-24",
+            "sha256": sha256_resource("blocked-server-words.txt"),
+            "license": "MIT",
+            "license_url": "https://opensource.org/license/mit",
+            "attribution": "hoststamp contributors",
+            "changes": "normalized as lowercase base36 tokens; base64url-encoded in artifact",
+            "notice_required": False,
+        },
+        SQIDS_BLOCKLIST_SOURCE_ID: {
+            "title": "Sqids default blocklist",
+            "url": "https://github.com/sqids/sqids-rust/blob/v0.4.2/src/blocklist.json",
+            "retrieved": "2026-05-24",
+            "sha256": sha256_resource(SQIDS_BLOCKLIST_RESOURCE),
+            "license": "MIT",
+            "license_url": "https://opensource.org/license/mit",
+            "attribution": "Sqids maintainers",
+            "changes": (
+                "extracted from pinned sqids 0.4.2 blocklist.json; " "base64url-encoded in artifact"
+            ),
+            "notice_required": True,
+        },
+    }
+
+
+def load_sqids_blocklist() -> list[str]:
+    data = resources.files("dictionary_normalizer").joinpath(f"data/{SQIDS_BLOCKLIST_RESOURCE}")
+    tokens = [
+        line.strip().lower()
+        for line in data.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    return sorted(set(tokens))
+
+
+def sha256_resource(name: str) -> str:
+    data = resources.files("dictionary_normalizer").joinpath(f"data/{name}")
+    return hashlib.sha256(data.read_bytes()).hexdigest()
 
 
 def sha256_file(path: Path) -> str:
@@ -174,6 +289,7 @@ def download_to_tempfile(source: SourceConfig, target: Path) -> str:
     total = 0
     temp_path: Path | None = None
     try:
+        # file:// is intentionally allowed for deterministic local refresh tests.
         with urllib.request.urlopen(download_url, timeout=30) as response:
             final_scheme = urlsplit(response.geturl()).scheme.lower()
             if final_scheme not in ALLOWED_DOWNLOAD_SCHEMES:

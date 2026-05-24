@@ -12,7 +12,7 @@ from dictionary_normalizer.artifact import build_artifact, read_artifact, write_
 from dictionary_normalizer.cli import main
 from dictionary_normalizer.manifest import Manifest, load_manifest
 from dictionary_normalizer.normalizer import load_default_blocklist
-from dictionary_normalizer.validator import validate_artifact
+from dictionary_normalizer.validator import decode_blocked_token, validate_artifact
 from tests._fixtures import source_config
 
 
@@ -33,11 +33,12 @@ class EndToEndTests(unittest.TestCase):
         artifact = build_artifact(root / "input", manifest)
 
         self.assertEqual(artifact["schema_version"], 1)
-        self.assertIn("adjective", artifact["categories"])
-        self.assertIn("animal", artifact["categories"])
-        self.assertIn("diceware", artifact["categories"])
+        dictionary = artifact["dictionary_versions"][str(artifact["default_dictionary_version"])]
+        self.assertIn("adjective", dictionary["categories"])
+        self.assertIn("animal", dictionary["categories"])
+        self.assertIn("diceware", dictionary["categories"])
         deity_words = {
-            word for words in artifact["categories"]["deity"]["lengths"].values() for word in words
+            artifact["words"]["allowed"][word_id] for word_id in dictionary["categories"]["deity"]
         }
         self.assertNotIn("hospitality", deity_words)
         validate_artifact(artifact)
@@ -81,22 +82,29 @@ class EndToEndTests(unittest.TestCase):
 
             self.assertEqual(artifact["schema_version"], 1)
             self.assertEqual((input_dir / "refreshable.txt").read_text(encoding="utf-8"), "alpha\n")
-            self.assertIn("refreshable", artifact["categories"])
-            self.assertIn("offline", artifact["categories"])
+            dictionary = artifact["dictionary_versions"][
+                str(artifact["default_dictionary_version"])
+            ]
+            self.assertIn("refreshable", dictionary["categories"])
+            self.assertIn("offline", dictionary["categories"])
 
-    def test_artifact_has_no_blocklisted_words(self) -> None:
+    def test_artifact_emits_default_blocklist_version(self) -> None:
         root = Path(__file__).resolve().parents[1]
         manifest = load_manifest(root / "sources.toml")
         artifact = build_artifact(root / "input", manifest)
         blocklist = load_default_blocklist()
-        words = {
-            word
-            for body in artifact["categories"].values()
-            for bucket in body["lengths"].values()
-            for word in bucket
+        blocked_words = [decode_blocked_token(token) for token in artifact["words"]["blocked"]]
+        source_ids = artifact["blocklist_versions"][str(artifact["default_blocklist_version"])][
+            "sources"
+        ]
+        server_words = {
+            blocked_words[word_id] for word_id in source_ids["hoststamp-server-name-blocklist"]
         }
-        self.assertFalse(words & blocklist)
-        self.assertFalse(words & {"aids", "crack", "debugging", "opium", "slave"})
+        sqids_words = {blocked_words[word_id] for word_id in source_ids["sqids-default-blocklist"]}
+        self.assertTrue({"aids", "crack", "debugging", "opium", "slave"} <= server_words)
+        self.assertTrue(server_words <= blocklist)
+        self.assertTrue({"0rgasm", "1d10t", "b00b", "c0ck"} <= sqids_words)
+        self.assertFalse(set(artifact["words"]["allowed"]) & set(blocked_words))
 
     def test_cli_uses_default_output_path(self) -> None:
         root = Path(__file__).resolve().parents[1]

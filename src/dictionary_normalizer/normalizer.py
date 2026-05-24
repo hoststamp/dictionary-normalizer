@@ -73,7 +73,6 @@ def normalize_word(
     raw: object,
     *,
     settings: NormalizationSettings = DEFAULT_SETTINGS,
-    blocklist: set[str] | None = None,
     drop_words: set[str] | None = None,
 ) -> str | None:
     value = str(raw).strip()
@@ -89,8 +88,6 @@ def normalize_word(
     if not settings.length_min <= len(value) <= settings.length_max:
         return None
     if settings.rfc1123_label and not is_rfc1123_label(value):
-        return None
-    if blocklist and value in blocklist:
         return None
     if drop_words and value in drop_words:
         return None
@@ -111,7 +108,6 @@ def normalize_words(
     raw_words: list[str],
     *,
     settings: NormalizationSettings = DEFAULT_SETTINGS,
-    blocklist: set[str] | None = None,
     drop_words: set[str] | None = None,
 ) -> list[str]:
     normalized = {
@@ -121,21 +117,8 @@ def normalize_words(
             word := normalize_word(
                 raw,
                 settings=settings,
-                blocklist=blocklist,
                 drop_words=drop_words,
             )
         )
     }
     return sorted(normalized)
-
-
-def bucket_by_length(words: list[str]) -> dict[str, list[str]]:
-    """Bucket words by exact length without assuming caller ordering."""
-    buckets: dict[str, list[str]] = {}
-    for word in words:
-        buckets.setdefault(str(len(word)), []).append(word)
-    return {length: sorted(set(values)) for length, values in sorted(buckets.items(), key=_int_key)}
-
-
-def _int_key(item: tuple[str, list[str]]) -> int:
-    return int(item[0])

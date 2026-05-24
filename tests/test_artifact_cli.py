@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -15,6 +16,7 @@ from dictionary_normalizer.artifact import build_artifact, read_artifact, refres
 from dictionary_normalizer.cli import main
 from dictionary_normalizer.errors import DictionaryNormalizerError
 from dictionary_normalizer.manifest import Manifest
+from dictionary_normalizer.released import find_released_hashes_path, load_released_hashes
 from tests._fixtures import source_config
 
 
@@ -53,6 +55,34 @@ class ArtifactAndCliTests(unittest.TestCase):
             path.write_text("[]", encoding="utf-8")
             with self.assertRaises(DictionaryNormalizerError):
                 read_artifact(path)
+
+    def test_load_released_hashes_rejects_missing_and_malformed_files(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(root / "missing.json")
+
+            path = root / "released.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(path)
+
+            path.write_text("{", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(path)
+
+    def test_find_released_hashes_path_searches_upward_from_anchor(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lock = root / "released-version-hashes.json"
+            lock.write_text("{}", encoding="utf-8")
+            nested = root / "output" / "artifact.json"
+            nested.parent.mkdir()
+
+            self.assertEqual(find_released_hashes_path(nested), lock)
+
+            with self.assertRaises(DictionaryNormalizerError):
+                find_released_hashes_path(root.parent / "missing" / "artifact.json")
 
     def test_refresh_sources_downloads_and_verifies_file_urls(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -187,7 +217,9 @@ class ArtifactAndCliTests(unittest.TestCase):
                 )
             )
             artifact = build_artifact(root, manifest)
-            self.assertEqual(len(artifact["meta"]["sources"]), 1)
+            self.assertIn("sample", artifact["sources"])
+            self.assertIn("hoststamp-server-name-blocklist", artifact["sources"])
+            self.assertIn("sqids-default-blocklist", artifact["sources"])
 
     def test_cli_validate_success_and_build_error(self) -> None:
         repo = Path(__file__).resolve().parents[1]
@@ -201,6 +233,57 @@ class ArtifactAndCliTests(unittest.TestCase):
         with redirect_stderr(err):
             self.assertEqual(main(["--input", "missing", "--output", "output/nope.json"]), 1)
         self.assertIn("error:", err.getvalue())
+
+    def test_cli_validate_finds_released_hashes_outside_repo_cwd(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        out = io.StringIO()
+        previous = Path.cwd()
+        with TemporaryDirectory() as temp_dir:
+            os.chdir(temp_dir)
+            try:
+                with redirect_stdout(out):
+                    self.assertEqual(main(["--validate", str(artifact)]), 0)
+            finally:
+                os.chdir(previous)
+        self.assertIn("valid", out.getvalue())
+
+    def test_cli_validate_accepts_explicit_released_hashes_path(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        released_hashes = repo / "released-version-hashes.json"
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(
+                main(
+                    [
+                        "--validate",
+                        str(artifact),
+                        "--released-hashes",
+                        str(released_hashes),
+                    ]
+                ),
+                0,
+            )
+        self.assertIn("valid", out.getvalue())
+
+    def test_cli_validate_rejects_missing_released_hashes(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(
+                main(
+                    [
+                        "--validate",
+                        str(artifact),
+                        "--released-hashes",
+                        str(repo / "missing-released-hashes.json"),
+                    ]
+                ),
+                1,
+            )
+        self.assertIn("released hashes file not found", err.getvalue())
 
     def test_cli_validate_rejects_invalid_artifact(self) -> None:
         with TemporaryDirectory() as temp_dir:

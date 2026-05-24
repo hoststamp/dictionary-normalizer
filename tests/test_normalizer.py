@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 
 from dictionary_normalizer.normalizer import (
     NormalizationSettings,
-    bucket_by_length,
     load_blocklist,
     normalize_word,
     normalize_words,
@@ -36,8 +35,8 @@ class NormalizerTests(unittest.TestCase):
         self.assertIsNone(normalize_word("ab"))
         self.assertIsNone(normalize_word("abcdefghijklmnop"))
 
-    def test_blocklist_and_dedupe(self) -> None:
-        words = normalize_words(["Alpha", "alpha", "Beta"], blocklist={"beta"})
+    def test_dedupe_and_drop_words(self) -> None:
+        words = normalize_words(["Alpha", "alpha", "Beta"], drop_words={"beta"})
         self.assertEqual(words, ["alpha"])
         self.assertIsNone(normalize_word("alpha", drop_words={"alpha"}))
 
@@ -53,12 +52,6 @@ class NormalizerTests(unittest.TestCase):
 
         settings = NormalizationSettings(rfc1123_label=False)
         self.assertEqual(normalize_word("alpha", settings=settings), "alpha")
-
-    def test_bucket_by_length(self) -> None:
-        self.assertEqual(
-            bucket_by_length(["ant", "bear", "ape"]),
-            {"3": ["ant", "ape"], "4": ["bear"]},
-        )
 
 
 if __name__ == "__main__":

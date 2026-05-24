@@ -18,6 +18,13 @@ Validate an existing artifact:
 python3 -m dictionary_normalizer --validate output/artifact.json
 ```
 
+If the released hash lock is not near the artifact or manifest path, pass it
+explicitly:
+
+```sh
+python3 -m dictionary_normalizer --validate output/artifact.json --released-hashes released-version-hashes.json
+```
+
 When installed, the console script is also available:
 
 ```sh
@@ -61,11 +68,35 @@ Coverage is enforced at 95% for the package under `src/`.
 
 ## Data Model
 
-`PROMPT.md` is the authoritative contract. `sources.toml` is the committed source manifest. It defines each input file,
-parser kind, category mapping, expected SHA-256, license metadata, attribution,
-and source-specific curation notes.
+This README documents the artifact contract. `sources.toml` is the committed
+source manifest. It defines each input file, parser kind, category mapping,
+expected SHA-256, license metadata, attribution, and source-specific curation
+notes.
 
-The generated JSON shape is the interchange contract documented in
-`PROMPT.md`: `schema_version`, `meta.normalization`, `meta.sources[]`, and
-string-keyed `categories` bucketed by word length. Normalized words are
-lowercase ASCII alphabetic tokens only: `^[a-z]+$`.
+The generated JSON shape contains separate `words.allowed` and encoded
+`words.blocked` tables, complete `dictionary_versions`, complete
+`blocklist_versions`, default version numbers, normalization metadata, and a
+source attribution map. Allowed words are lowercase ASCII alphabetic tokens
+only: `^[a-z]+$`. Blocked tokens decode to lowercase base36 and are
+base64url-encoded without padding in the artifact.
+
+Dictionary and blocklist version hashes are deterministic hashes of logical
+content, not JSON formatting. Released hashes are pinned in
+`released-version-hashes.json`; validation fails if a pinned version changes.
+To deliberately inspect the NSFW blocked token list, run
+`scripts/decode-blocked-words.py output/artifact.json`.
+
+## Hoststamp Migration Note
+
+Hoststamp should keep this artifact as build-time input. `build.rs` reads and
+validates the normalized artifact, then emits generated Rust constants for the
+allowed word table, blocked token table, dictionary version indexes, blocklist
+version indexes, source attribution metadata, and version hashes.
+
+Profile config should store `dictionary_version`, `blocklist_version`,
+category/length settings, and resolved word-pool hashes. Generation resolves
+candidate pools by dictionary version, category, and length. It should use the
+selected blocklist version's decoded tokens for suffix/Sqids filtering and as
+the invariant that allowed words are not blocked. Old profiles fail closed
+only when their selected dictionary/blocklist version hash or resolved pool
+hash no longer matches; unrelated new versions do not invalidate them.
