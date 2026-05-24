@@ -69,7 +69,7 @@ Don't mutate state outside the working tree without being told to.
 - Type check: `mypy src`
 
 ## Project Conventions
-- `PROMPT.md` is the authoritative product and artifact contract. Treat schema changes as breaking and update the prompt before changing emitted JSON.
+- `README.md` documents the artifact contract. Treat schema changes as breaking and update the README before changing emitted JSON.
 - Runtime code should stay dependency-free unless there is a clear need; dev-only tooling belongs in the `dev` extra and `requirements-dev.txt`.
 - Generated artifacts belong under `output/`. Keep `output/.gitkeep`; do not commit generated JSON unless explicitly asked.
 - `--refresh` downloads only refreshable sources with pinned `download_url` values and matching SHA-256. Curated local fixtures must be marked `refreshable = false`, not silently treated as downloaded inputs.
