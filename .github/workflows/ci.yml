@@ -18,5 +18,8 @@ jobs:
       - run: mypy src
       - run: coverage run -m pytest tests
       - run: coverage report
-      - run: dictionary-normalizer --input input --output output/artifact.json
+      - run: |
+          generated="$(python -c 'import json; print(json.load(open("output/artifact.json"))["generated"])')"
+          dictionary-normalizer --input input --output output/artifact.json --generated "$generated"
+          git diff --exit-code -- output/artifact.json
       - run: dictionary-normalizer --validate output/artifact.json

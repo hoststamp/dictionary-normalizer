@@ -1,9 +1,11 @@
-# Hoststamp dictionary candidates — review staging
+# Hoststamp dictionary candidates
 
-Scratch only (gitignored, not committed). All sources below are
-license-compatible with bundling in an FSL-1.1-ALv2 project:
-Apache-2.0 / BSD-3-Clause / MIT need a NOTICE-style attribution line; CC0 and
-factual data (star names, elements, NATO) carry no obligation.
+Committed review notes for the source lists used to build the Hoststamp
+dictionary artifact. All sources below are compatible with redistribution in
+this MIT-licensed project when their original license and attribution
+requirements are preserved. Apache-2.0 / BSD-3-Clause / MIT sources need a
+NOTICE-style attribution line; CC0 and factual data (star names, elements,
+NATO) carry no obligation.
 
 `clean%` = share of entries already DNS-label-safe as-is
 (`^[a-z0-9-]+$` after lowercasing). Low values mean the list needs

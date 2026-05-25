@@ -227,6 +227,21 @@ class ArtifactAndCliTests(unittest.TestCase):
             self.assertIn("hoststamp-server-name-blocklist", artifact["sources"])
             self.assertIn("sqids-default-blocklist", artifact["sources"])
 
+    def test_build_artifact_accepts_explicit_generated_timestamp(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest((source_config(expected_sha256=digest),))
+
+            artifact = build_artifact(
+                root,
+                manifest,
+                generated="2026-05-19T00:00:00Z",
+            )
+
+        self.assertEqual(artifact["generated"], "2026-05-19T00:00:00Z")
+
     def test_blocked_word_table_does_not_drive_dictionary_exclusions(self) -> None:
         blocklist_versions = {
             1: {"safety": ["alpha"]},
@@ -299,6 +314,32 @@ class ArtifactAndCliTests(unittest.TestCase):
                 1,
             )
         self.assertIn("released hashes file not found", err.getvalue())
+
+    def test_cli_build_accepts_explicit_generated_timestamp(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "artifact.json"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(
+                    main(
+                        [
+                            "--input",
+                            str(repo / "input"),
+                            "--manifest",
+                            str(repo / "sources.toml"),
+                            "--output",
+                            str(output),
+                            "--generated",
+                            "2026-05-19T00:00:00Z",
+                        ]
+                    ),
+                    0,
+                )
+
+            artifact = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(artifact["generated"], "2026-05-19T00:00:00Z")
+        self.assertIn("wrote", out.getvalue())
 
     def test_cli_validate_rejects_invalid_artifact(self) -> None:
         with TemporaryDirectory() as temp_dir:

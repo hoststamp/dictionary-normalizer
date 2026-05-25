@@ -45,6 +45,7 @@ def build_artifact(
     *,
     refresh: bool = False,
     released_hashes: dict[str, Any] | None = None,
+    generated: str | None = None,
 ) -> dict[str, Any]:
     if refresh:
         refresh_sources(input_dir, manifest)
@@ -140,7 +141,8 @@ def build_artifact(
         },
     )
 
-    generated = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    if generated is None:
+        generated = generated_timestamp()
     artifact: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated": generated,
@@ -162,6 +164,10 @@ def build_artifact(
     }
     validate_artifact(artifact, released_hashes=released_hashes)
     return artifact
+
+
+def generated_timestamp() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def write_artifact(path: Path, artifact: dict[str, Any]) -> None:

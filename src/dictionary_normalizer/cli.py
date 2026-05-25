@@ -24,6 +24,10 @@ def main(argv: list[str] | None = None) -> int:
         "--released-hashes",
         help="released version hash lock path; defaults to searching near the artifact/manifest",
     )
+    parser.add_argument(
+        "--generated",
+        help="UTC RFC3339 artifact timestamp to write; useful for reproducible rebuild checks",
+    )
     parser.add_argument("--refresh", action="store_true", help="refresh sources before building")
     parser.add_argument("--validate", metavar="ARTIFACT", help="validate an existing artifact")
 
@@ -46,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
             manifest,
             refresh=args.refresh,
             released_hashes=released_hashes,
+            generated=args.generated,
         )
         write_artifact(Path(args.output), artifact)
         print(f"wrote {args.output}")
