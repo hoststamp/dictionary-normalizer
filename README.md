@@ -3,6 +3,13 @@
 Standalone Python CLI that normalizes third-party word sources into a single
 validated JSON dictionary artifact consumed by `hoststamp`.
 
+## License
+
+The normalizer source code is licensed under the MIT License. Input word sources
+and generated dictionary artifacts include normalized third-party data that
+retains its original licensing and attribution requirements. See
+`THIRD_PARTY_NOTICES.md` and `sources.toml` for source provenance.
+
 ## Usage
 
 After installing the package, build an artifact from the checked-in offline

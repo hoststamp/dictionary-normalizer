@@ -2,7 +2,7 @@
 
 Scratch only (gitignored, not committed). All sources below are
 license-compatible with bundling in an FSL-1.1-ALv2 project:
-Apache-2.0 / MIT need a NOTICE-style attribution line; CC0 and
+Apache-2.0 / BSD-3-Clause / MIT need a NOTICE-style attribution line; CC0 and
 factual data (star names, elements, NATO) carry no obligation.
 
 `clean%` = share of entries already DNS-label-safe as-is
@@ -17,8 +17,8 @@ it is unusable — just more normalization work.
 | `petname/names.txt` | petname (animals) | Apache-2.0 | 449 | 2-8 | 100% | hamster, ghost, mackerel, gar, wildcat, marten |
 | `docker-moby/adjectives.txt` | docker/moby | Apache-2.0 | 108 | 3-13 | 100% | blissful, angry, sad, elated, upbeat, focused |
 | `docker-moby/surnames.txt` | docker/moby (scientists) | Apache-2.0 | 245 | 2-89 | 97% | noyce, wozniak, newton, mirzakhani, benz, mcclintock |
-| `haikunator/adjectives.txt` | haikunator | MIT | 91 | 3-9 | 100% | wispy, morning, bold, green, bitter, misty |
-| `haikunator/nouns.txt` | haikunator | MIT | 95 | 3-10 | 100% | sky, shadow, glade, snowflake, night, mountain |
+| `haikunator/adjectives.txt` | haikunator | BSD-3-Clause | 91 | 3-9 | 100% | wispy, morning, bold, green, bitter, misty |
+| `haikunator/nouns.txt` | haikunator | BSD-3-Clause | 95 | 3-10 | 100% | sky, shadow, glade, snowflake, night, mountain |
 | `iau-star-names/star-names.txt` | IAU star names | factual / public domain | 443 | 1-15 | 99% | Hunahpu, Homam, Nusakan, Mago, Mira, Chechia |
 | `corpora/greek-gods.txt` | Greek gods | CC0 | 31 | 3-10 | 100% | Hera, Zeus, Demeter, Aether, Aphrodite, Phanes |
 | `corpora/greek-titans.txt` | Greek titans | CC0 | 33 | 3-10 | 100% | Coeus, Eos, Aura, Styx, Hyperion, Themis |
@@ -62,11 +62,11 @@ blissful, angry, sad, elated, upbeat, focused, boring, busy, heuristic, festive,
 
 noyce, wozniak, newton, mirzakhani, benz, mcclintock, meninsky, chaplygin, kowalevski, pike, dirac, cerf, jemison, haibt, elgamal, williamson, merkle, nobel, lederberg, davinci
 
-### haikunator — `haikunator/adjectives.txt` (91, len 3-9, MIT, src: github.com/Atrox/haikunatorgo (haikunator.go))
+### haikunator — `haikunator/adjectives.txt` (91, len 3-9, BSD-3-Clause, src: github.com/Atrox/haikunatorgo (haikunator.go))
 
 wispy, morning, bold, green, bitter, misty, polished, late, broad, frosty, square, weathered, shrill, plain, wandering, restless, delicate, jolly, dawn, holy
 
-### haikunator — `haikunator/nouns.txt` (95, len 3-10, MIT, src: github.com/Atrox/haikunatorgo (haikunator.go))
+### haikunator — `haikunator/nouns.txt` (95, len 3-10, BSD-3-Clause, src: github.com/Atrox/haikunatorgo (haikunator.go))
 
 sky, shadow, glade, snowflake, night, mountain, math, flower, credit, salad, rice, bush, boat, cell, dawn, term, dew, violet, star, bread
 
@@ -149,4 +149,3 @@ Tony, Oakley, Lumo, Lake, October, Turhan, Rylan, Dana, Mika, Sydney, Gili, Jade
 ### NATO phonetic — `facts/nato-phonetic.txt` (26, len 4-8, public domain, src: ICAO/NATO alphabet (fact))
 
 Victor, Kilo, Tango, Yankee, Zulu, Delta, Juliett, Quebec, Xray, November, Whiskey, Golf, Lima, Echo, India, Charlie, Uniform, Oscar, Sierra, Foxtrot
-
