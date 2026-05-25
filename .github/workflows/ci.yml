@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy src
+      - run: coverage run -m pytest tests
+      - run: coverage report
+      - run: |
+          generated="$(python -c 'import json; print(json.load(open("output/artifact.json"))["generated"])')"
+          dictionary-normalizer --input input --output output/artifact.json --generated "$generated"
+          git diff --exit-code -- output/artifact.json
+      - run: dictionary-normalizer --validate output/artifact.json

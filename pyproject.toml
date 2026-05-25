@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dictionary-normalizer"
+version = "0.1.0"
+description = "Normalize third-party word sources into a validated hoststamp dictionary artifact."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "hoststamp contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "coverage==7.6.10",
+  "pytest==8.3.4",
+  "ruff==0.8.4",
+  "mypy==1.14.1",
+]
+
+[project.scripts]
+dictionary-normalizer = "dictionary_normalizer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dictionary_normalizer = ["data/*.txt"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["input"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["dictionary_normalizer"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "if __name__ == .__main__.:",
+]

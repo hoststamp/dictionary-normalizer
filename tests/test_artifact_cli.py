@@ -1,0 +1,355 @@
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from urllib.error import URLError
+
+from dictionary_normalizer import artifact as artifact_module
+from dictionary_normalizer.artifact import (
+    alpha_tokens,
+    blocked_word_table,
+    build_artifact,
+    read_artifact,
+    refresh_sources,
+)
+from dictionary_normalizer.cli import main
+from dictionary_normalizer.errors import DictionaryNormalizerError
+from dictionary_normalizer.manifest import Manifest
+from dictionary_normalizer.released import find_released_hashes_path, load_released_hashes
+from tests._fixtures import source_config
+
+
+class ArtifactAndCliTests(unittest.TestCase):
+    def test_build_artifact_rejects_missing_input_file(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            manifest = Manifest((source_config(expected_sha256=digest),))
+            with self.assertRaises(DictionaryNormalizerError):
+                build_artifact(Path(temp_dir), manifest)
+
+    def test_build_artifact_rejects_paths_outside_input_dir(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            outside = root.parent / f"{root.name}-outside.txt"
+            try:
+                outside.write_text("alpha\n", encoding="utf-8")
+                digest = hashlib.sha256(outside.read_bytes()).hexdigest()
+                manifest = Manifest((source_config(expected_sha256=digest, path="../outside.txt"),))
+                with self.assertRaises(DictionaryNormalizerError):
+                    build_artifact(root, manifest)
+            finally:
+                outside.unlink(missing_ok=True)
+
+    def test_build_artifact_rejects_sha256_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest((source_config(expected_sha256="0" * 64),))
+            with self.assertRaises(DictionaryNormalizerError):
+                build_artifact(root, manifest)
+
+    def test_read_artifact_rejects_non_object_json(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "artifact.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                read_artifact(path)
+
+    def test_load_released_hashes_rejects_missing_and_malformed_files(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(root / "missing.json")
+
+            path = root / "released.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(path)
+
+            path.write_text("{", encoding="utf-8")
+            with self.assertRaises(DictionaryNormalizerError):
+                load_released_hashes(path)
+
+    def test_find_released_hashes_path_searches_upward_from_anchor(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lock = root / "released-version-hashes.json"
+            lock.write_text("{}", encoding="utf-8")
+            nested = root / "output" / "artifact.json"
+            nested.parent.mkdir()
+
+            self.assertEqual(find_released_hashes_path(nested), lock)
+
+            with self.assertRaises(DictionaryNormalizerError):
+                find_released_hashes_path(root.parent / "missing" / "artifact.json")
+
+    def test_refresh_sources_downloads_and_verifies_file_urls(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        path="nested/words.txt",
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+
+            refresh_sources(root, manifest)
+            self.assertEqual((root / "nested/words.txt").read_text(encoding="utf-8"), "alpha\n")
+
+    def test_refresh_sources_rejects_download_hash_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256="0" * 64,
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+
+            with self.assertRaises(DictionaryNormalizerError):
+                refresh_sources(root, manifest)
+            self.assertFalse((root / "words.txt").exists())
+
+    def test_refresh_sources_skips_non_refreshable_sources(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest(
+            (
+                source_config(
+                    expected_sha256=digest,
+                    refreshable=False,
+                ),
+            )
+        )
+        with TemporaryDirectory() as temp_dir:
+            refresh_sources(Path(temp_dir), manifest)
+            self.assertFalse((Path(temp_dir) / "words.txt").exists())
+
+    def test_refresh_sources_requires_urls_for_refreshable_sources(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest((source_config(expected_sha256=digest),))
+        with TemporaryDirectory() as temp_dir, self.assertRaises(DictionaryNormalizerError):
+            refresh_sources(Path(temp_dir), manifest)
+
+    def test_refresh_sources_rejects_unsupported_url_schemes(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        for url in ("http://example.com/words.txt", "ftp://example.com/words.txt", "words.txt"):
+            with self.subTest(url=url), TemporaryDirectory() as temp_dir:
+                manifest = Manifest((source_config(expected_sha256=digest, download_url=url),))
+                with self.assertRaises(DictionaryNormalizerError):
+                    refresh_sources(Path(temp_dir), manifest)
+
+    def test_refresh_sources_rejects_paths_outside_input_dir(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        path="../outside.txt",
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+            with self.assertRaises(DictionaryNormalizerError):
+                refresh_sources(root, manifest)
+
+    def test_refresh_sources_wraps_download_errors(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        manifest = Manifest(
+            (
+                source_config(
+                    expected_sha256=digest,
+                    download_url="https://example.com/words.txt",
+                ),
+            )
+        )
+        with (
+            TemporaryDirectory() as temp_dir,
+            patch("urllib.request.urlopen", side_effect=URLError("offline")),
+            self.assertRaises(DictionaryNormalizerError),
+        ):
+            refresh_sources(Path(temp_dir), manifest)
+
+    def test_refresh_sources_rejects_oversized_downloads(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            download = root / "download.txt"
+            download.write_text("alpha\n", encoding="utf-8")
+            digest = hashlib.sha256(download.read_bytes()).hexdigest()
+            manifest = Manifest(
+                (
+                    source_config(
+                        expected_sha256=digest,
+                        download_url=download.as_uri(),
+                    ),
+                )
+            )
+            with (
+                patch.object(artifact_module, "MAX_DOWNLOAD_BYTES", 1),
+                self.assertRaises(DictionaryNormalizerError),
+            ):
+                refresh_sources(root, manifest)
+            self.assertFalse((root / "words.txt").exists())
+
+    def test_disabled_sources_are_omitted(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest(
+                (
+                    source_config(expected_sha256=digest, enabled=False),
+                    source_config(expected_sha256=digest),
+                )
+            )
+            artifact = build_artifact(root, manifest)
+            self.assertIn("sample", artifact["sources"])
+            self.assertIn("hoststamp-server-name-blocklist", artifact["sources"])
+            self.assertIn("sqids-default-blocklist", artifact["sources"])
+
+    def test_build_artifact_accepts_explicit_generated_timestamp(self) -> None:
+        digest = hashlib.sha256(b"alpha\n").hexdigest()
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "words.txt").write_text("alpha\n", encoding="utf-8")
+            manifest = Manifest((source_config(expected_sha256=digest),))
+
+            artifact = build_artifact(
+                root,
+                manifest,
+                generated="2026-05-19T00:00:00Z",
+            )
+
+        self.assertEqual(artifact["generated"], "2026-05-19T00:00:00Z")
+
+    def test_blocked_word_table_does_not_drive_dictionary_exclusions(self) -> None:
+        blocklist_versions = {
+            1: {"safety": ["alpha"]},
+            2: {"safety": ["alpha", "bravo"]},
+        }
+
+        self.assertEqual(blocked_word_table(blocklist_versions), ["alpha", "bravo"])
+        self.assertEqual(alpha_tokens(blocklist_versions[1]), {"alpha"})
+
+    def test_cli_validate_success_and_build_error(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(main(["--validate", str(artifact)]), 0)
+        self.assertIn("valid", out.getvalue())
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(main(["--input", "missing", "--output", "output/nope.json"]), 1)
+        self.assertIn("error:", err.getvalue())
+
+    def test_cli_validate_finds_released_hashes_outside_repo_cwd(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        out = io.StringIO()
+        previous = Path.cwd()
+        with TemporaryDirectory() as temp_dir:
+            os.chdir(temp_dir)
+            try:
+                with redirect_stdout(out):
+                    self.assertEqual(main(["--validate", str(artifact)]), 0)
+            finally:
+                os.chdir(previous)
+        self.assertIn("valid", out.getvalue())
+
+    def test_cli_validate_accepts_explicit_released_hashes_path(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        released_hashes = repo / "released-version-hashes.json"
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(
+                main(
+                    [
+                        "--validate",
+                        str(artifact),
+                        "--released-hashes",
+                        str(released_hashes),
+                    ]
+                ),
+                0,
+            )
+        self.assertIn("valid", out.getvalue())
+
+    def test_cli_validate_rejects_missing_released_hashes(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        artifact = repo / "output/artifact.json"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(
+                main(
+                    [
+                        "--validate",
+                        str(artifact),
+                        "--released-hashes",
+                        str(repo / "missing-released-hashes.json"),
+                    ]
+                ),
+                1,
+            )
+        self.assertIn("released hashes file not found", err.getvalue())
+
+    def test_cli_build_accepts_explicit_generated_timestamp(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "artifact.json"
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(
+                    main(
+                        [
+                            "--input",
+                            str(repo / "input"),
+                            "--manifest",
+                            str(repo / "sources.toml"),
+                            "--output",
+                            str(output),
+                            "--generated",
+                            "2026-05-19T00:00:00Z",
+                        ]
+                    ),
+                    0,
+                )
+
+            artifact = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(artifact["generated"], "2026-05-19T00:00:00Z")
+        self.assertIn("wrote", out.getvalue())
+
+    def test_cli_validate_rejects_invalid_artifact(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "bad.json"
+            path.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(main(["--validate", str(path)]), 1)
+            self.assertIn("error:", err.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
