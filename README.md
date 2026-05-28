@@ -73,6 +73,26 @@ coverage report
 
 Coverage is enforced at 95% for the package under `src/`.
 
+## Release
+
+Releases are cut from the manual `Release` GitHub Actions workflow. Provide a
+three-part version such as `0.2.0`. The version may match the current project
+version or be greater than it; lower versions are rejected. When the requested
+version is greater, the workflow updates `pyproject.toml`,
+`src/dictionary_normalizer/__init__.py`, and the committed
+`output/artifact.json` generator string, then runs the full validation suite.
+
+When `dry_run` is false, the workflow commits the release bump, creates the
+immutable `vX.Y.Z` tag, updates the moving `vX.Y` and `vX` tags, builds the
+source and wheel distributions, and publishes a GitHub release containing the
+distributions and dictionary artifact.
+
+To prepare the same version bump locally without tagging:
+
+```sh
+python3 scripts/prepare-release.py 0.2.0
+```
+
 ## Data Model
 
 This README documents the artifact contract. `sources.toml` is the committed

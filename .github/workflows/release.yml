@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 0.2.0
+        required: true
+        type: string
+      dry_run:
+        description: Prepare and verify without committing, tagging, or creating a GitHub release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Normalize release version
+        id: version
+        shell: bash
+        run: |
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "version must be a three-part release version like 0.2.0" >&2
+            exit 1
+          fi
+          if git rev-parse --verify --quiet "refs/tags/v$version" >/dev/null; then
+            echo "tag v$version already exists" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: python -m pip install -e ".[dev]"
+
+      - name: Prepare release files
+        run: python scripts/prepare-release.py "${{ steps.version.outputs.version }}"
+
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy src
+      - run: coverage run -m pytest tests
+      - run: coverage report
+      - run: dictionary-normalizer --validate output/artifact.json
+
+      - name: Build package
+        run: |
+          python -m pip install build==1.2.2.post1
+          python -m build
+
+      - name: Commit and tag release
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          major="${version%%.*}"
+          minor="${version%.*}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add pyproject.toml src/dictionary_normalizer/__init__.py output/artifact.json
+            git commit -m "Release v$version"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+          git tag -a "v$version" -m "Release v$version"
+          git tag -f "v$major"
+          git tag -f "v$minor"
+          git push origin "v$version"
+          git push --force origin "refs/tags/v$major" "refs/tags/v$minor"
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          gh release create "v$version" \
+            dist/* \
+            output/artifact.json \
+            --title "v$version" \
+            --notes "Release v$version"
+
+      - name: Show dry-run diff
+        if: ${{ inputs.dry_run }}
+        run: git diff -- pyproject.toml src/dictionary_normalizer/__init__.py output/artifact.json
