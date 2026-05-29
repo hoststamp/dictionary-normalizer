@@ -16,11 +16,14 @@ PROJECT_VERSION_RE = re.compile(r'(?m)^version = "([^"]+)"$')
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare a dictionary-normalizer release.")
-    parser.add_argument("version", help="release version, for example 0.2.0 or v0.2.0")
+    parser.add_argument(
+        "release",
+        help="release version or bump level: patch, minor, major, 0.2.0, or v0.2.0",
+    )
     args = parser.parse_args(argv)
 
     current_version = read_current_version()
-    version = normalize_version(args.version)
+    version = resolve_release_version(current_version, args.release)
     ensure_not_downgrade(current_version, version)
     update_project_version(version)
     rebuild_artifact()
@@ -35,12 +38,51 @@ def normalize_version(raw_version: str) -> str:
     return stripped.removeprefix("v")
 
 
+def resolve_release_version(current_version: str, requested_release: str) -> str:
+    match requested_release:
+        case "patch" | "minor" | "major":
+            return bump_version(current_version, requested_release)
+        case _:
+            return normalize_version(requested_release)
+
+
+def bump_version(version: str, level: str) -> str:
+    major, minor, patch = version_tuple(version)
+    match level:
+        case "patch":
+            patch += 1
+        case "minor":
+            minor += 1
+            patch = 0
+        case "major":
+            major += 1
+            minor = 0
+            patch = 0
+        case _:
+            raise SystemExit(f"unsupported bump level: {level}")
+    return f"{major}.{minor}.{patch}"
+
+
 def read_current_version() -> str:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    match = PROJECT_VERSION_RE.search(pyproject)
-    if match is None:
+    pyproject_match = PROJECT_VERSION_RE.search(pyproject)
+    if pyproject_match is None:
         raise SystemExit("pyproject.toml: project version field not found")
-    return normalize_version(match.group(1))
+
+    package_init = (ROOT / "src/dictionary_normalizer/__init__.py").read_text(encoding="utf-8")
+    package_match = re.search(r'(?m)^__version__ = "([^"]+)"$', package_init)
+    if package_match is None:
+        raise SystemExit("src/dictionary_normalizer/__init__.py: package version not found")
+
+    pyproject_version = normalize_version(pyproject_match.group(1))
+    package_version = normalize_version(package_match.group(1))
+    if package_version != pyproject_version:
+        raise SystemExit(
+            "project version mismatch: "
+            f"pyproject.toml has {pyproject_version}, "
+            f"__init__.py has {package_version}"
+        )
+    return pyproject_version
 
 
 def ensure_not_downgrade(current_version: str, release_version: str) -> None:
