@@ -44,13 +44,29 @@ jobs:
       - run: python -m pip install -e ".[dev]"
 
       - name: Verify release files
-        run: python scripts/prepare-release.py "${{ inputs.version }}"
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python scripts/prepare-release.py "$RELEASE_VERSION"
 
       - name: Resolve release version
         id: version
         shell: bash
         run: |
-          version="$(python -c 'import re; print(re.search(r"(?m)^version = \"([^\"]+)\"$", open("pyproject.toml", encoding="utf-8").read()).group(1))')"
+          version="$(python - <<'PY'
+          import re
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as pyproject:
+              version = tomllib.load(pyproject)["project"]["version"]
+
+          if re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version) is None:
+              print("pyproject.toml: project version must be a three-part release version like 0.2.0", file=sys.stderr)
+              sys.exit(1)
+
+          print(version)
+          PY
+          )"
           if git rev-parse --verify --quiet "refs/tags/v$version" >/dev/null; then
             echo "tag v$version already exists" >&2
             exit 1
@@ -73,31 +89,32 @@ jobs:
 
       - name: Tag release
         if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
-          version="${{ steps.version.outputs.version }}"
-          major="${version%%.*}"
-          minor="${version%.*}"
+          major="${RELEASE_VERSION%%.*}"
+          minor="${RELEASE_VERSION%.*}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$version" -m "Release v$version"
+          git tag -a "v$RELEASE_VERSION" -m "Release v$RELEASE_VERSION"
           git tag -f "v$major"
           git tag -f "v$minor"
-          git push origin "v$version"
+          git push origin "v$RELEASE_VERSION"
           git push --force origin "refs/tags/v$major" "refs/tags/v$minor"
 
       - name: Create GitHub release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          version="${{ steps.version.outputs.version }}"
-          gh release create "v$version" \
+          gh release create "v$RELEASE_VERSION" \
             dist/* \
             output/artifact.json \
-            --title "v$version" \
-            --notes "Release v$version"
+            --title "v$RELEASE_VERSION" \
+            --notes "Release v$RELEASE_VERSION"
 
       - name: Show dry-run diff
         if: ${{ inputs.dry_run }}

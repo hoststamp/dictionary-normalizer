@@ -55,6 +55,18 @@ class ArtifactAndCliTests(unittest.TestCase):
             with self.assertRaises(DictionaryNormalizerError):
                 build_artifact(root, manifest)
 
+    def test_build_artifact_rejects_dropped_server_blocklist_entries(self) -> None:
+        with (
+            TemporaryDirectory() as temp_dir,
+            patch.object(
+                artifact_module,
+                "load_blocklist",
+                return_value={"alpha", "abcdefghijklmn"},
+            ),
+            self.assertRaisesRegex(DictionaryNormalizerError, "abcdefghijklmn"),
+        ):
+            build_artifact(Path(temp_dir), Manifest(()))
+
     def test_read_artifact_rejects_non_object_json(self) -> None:
         with TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "artifact.json"
