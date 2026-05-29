@@ -243,7 +243,7 @@ def blocklist_source_records() -> dict[str, dict[str, Any]]:
             "license_url": "https://opensource.org/license/mit",
             "attribution": "Sqids maintainers",
             "changes": (
-                "extracted from pinned sqids 0.4.2 blocklist.json; " "base64url-encoded in artifact"
+                "extracted from pinned sqids 0.4.2 blocklist.json; base64url-encoded in artifact"
             ),
             "notice_required": True,
         },

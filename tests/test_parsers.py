@@ -37,8 +37,7 @@ class ParserTests(unittest.TestCase):
 
     def test_iau_csn(self) -> None:
         text = (
-            "# comment\n$ url continuation\nSirius alpha canis\n"
-            "_ placeholder\nVega alpha lyrae\n"
+            "# comment\n$ url continuation\nSirius alpha canis\n_ placeholder\nVega alpha lyrae\n"
         )
         self.assertEqual(parse_iau_csn(text), ["Sirius", "Vega"])
 
