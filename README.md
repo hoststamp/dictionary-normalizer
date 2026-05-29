@@ -75,32 +75,30 @@ Coverage is enforced at 95% for the package under `src/`.
 
 ## Release
 
-Releases are cut from the manual `Release` GitHub Actions workflow. Provide
-`patch`, `minor`, `major`, or a three-part version such as `0.2.0`. The
-resolved version may match the current project version or be greater than it;
-lower versions are rejected. Publishing releases must run from `main`; dry runs
-can run from any branch. When the requested version is greater, the workflow
-updates `pyproject.toml`,
-`src/dictionary_normalizer/__init__.py`, and the committed
-`output/artifact.json` generator string, then runs the full validation suite.
+Release prep is separate from publishing. Use `scripts/prepare-release.py` on a
+release branch to update `pyproject.toml`, `src/dictionary_normalizer/__init__.py`,
+and the committed `output/artifact.json` generator string, then merge that
+branch to `main`.
 
-When `dry_run` is false, the workflow commits the release bump, creates the
-immutable `vX.Y.Z` tag, updates the moving `vX.Y` and `vX` tags, builds the
-source and wheel distributions, and publishes a GitHub release containing the
-distributions and dictionary artifact.
+Publishing runs from an up-to-date `main` branch with a full version such as
+`0.2.0`. The remote `Release` workflow verifies the requested version is already
+committed, runs the full validation suite, builds the source and wheel
+distributions, creates the immutable `vX.Y.Z` tag, updates the moving `vX.Y` and
+`vX` tags, and publishes a GitHub release containing the distributions and
+dictionary artifact.
 
 To prepare the same version bump locally without tagging:
 
 ```sh
-python3 scripts/prepare-release.py 0.2.0
 python3 scripts/prepare-release.py patch
 ```
 
-To tag the current version from an up-to-date `main` branch:
+After the release prep PR is merged, dispatch the release workflow from an
+up-to-date `main` branch with the full version:
 
 ```sh
-python3 scripts/tag-release.py
-python3 scripts/tag-release.py --push
+python3 scripts/release.py 0.2.0 --dry-run --watch
+python3 scripts/release.py 0.2.0 --watch
 ```
 
 ## Data Model

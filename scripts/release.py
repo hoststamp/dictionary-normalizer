@@ -2,45 +2,60 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO = "hoststamp/dictionary-normalizer"
 VERSION_RE = re.compile(r"^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 PROJECT_VERSION_RE = re.compile(r'(?m)^version = "([^"]+)"$')
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Create dictionary-normalizer release tags.")
+    parser = argparse.ArgumentParser(description="Dispatch the release workflow.")
+    parser.add_argument("version", help="full release version, for example 0.2.0 or v0.2.0")
     parser.add_argument(
-        "version",
-        nargs="?",
-        help="release version; defaults to the current project version",
-    )
-    parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
-    parser.add_argument("--push", action="store_true", help="push created tags to origin")
-    parser.add_argument(
-        "--github-actions",
+        "--dry-run",
         action="store_true",
-        help="allow a GitHub Actions main-branch checkout without a local upstream",
+        help="run the workflow without publishing",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="watch the workflow run until completion",
     )
     args = parser.parse_args(argv)
 
-    ensure_clean_main(github_actions=args.github_actions)
+    version = normalize_version(args.version)
+    ensure_clean_current_main()
     current_version = read_current_version()
-    version = current_version if args.version is None else normalize_version(args.version)
     if version != current_version:
         raise SystemExit(
             f"requested version {version} does not match current project version {current_version}"
         )
     ensure_tag_available(version)
-    if not args.yes:
-        confirm(version, push=args.push)
-    create_tags(version)
-    if args.push:
-        push_tags(version)
+
+    before_run_ids = workflow_run_ids()
+    run(
+        "gh",
+        "workflow",
+        "run",
+        "release.yml",
+        "--repo",
+        REPO,
+        "--ref",
+        "main",
+        "-f",
+        f"version={version}",
+        "-f",
+        f"dry_run={str(args.dry_run).lower()}",
+    )
+    run_id = wait_for_new_run(before_run_ids)
+    print(f"https://github.com/{REPO}/actions/runs/{run_id}")
+    if args.watch:
+        run("gh", "run", "watch", run_id, "--repo", REPO, "--exit-status", stream=True)
     return 0
 
 
@@ -74,28 +89,19 @@ def read_current_version() -> str:
     return pyproject_version
 
 
-def ensure_clean_main(*, github_actions: bool) -> None:
+def ensure_clean_current_main() -> None:
     if git("status", "--porcelain").stdout.strip():
-        raise SystemExit("worktree must be clean before tagging")
-
-    git("fetch", "origin", "main:refs/remotes/origin/main", "--tags")
-    local_head = git("rev-parse", "HEAD").stdout.strip()
-    remote_head = git("rev-parse", "origin/main").stdout.strip()
-
-    if github_actions:
-        if os.environ.get("GITHUB_REF_NAME") != "main":
-            raise SystemExit("release tag must be created from the main GitHub Actions ref")
-        if local_head != remote_head:
-            raise SystemExit("GitHub Actions checkout must match origin/main before tagging")
-        return
+        raise SystemExit("worktree must be clean before releasing")
 
     branch = git("branch", "--show-current").stdout.strip()
     if branch != "main":
-        raise SystemExit(f"release tag must be created from main, currently on {branch}")
+        raise SystemExit(f"release workflow must be dispatched from main, currently on {branch}")
 
+    git("fetch", "origin", "main:refs/remotes/origin/main", "--tags")
     local_head = git("rev-parse", "main").stdout.strip()
+    remote_head = git("rev-parse", "origin/main").stdout.strip()
     if local_head != remote_head:
-        raise SystemExit("main must match origin/main before tagging")
+        raise SystemExit("main must match origin/main before releasing")
 
     upstream = git(
         "rev-parse",
@@ -105,11 +111,11 @@ def ensure_clean_main(*, github_actions: bool) -> None:
         check=False,
     ).stdout.strip()
     if upstream != "origin/main":
-        raise SystemExit("main must track origin/main before tagging")
+        raise SystemExit("main must track origin/main before releasing")
 
 
 def ensure_tag_available(version: str) -> None:
-    tag = stable_tag(version)
+    tag = f"v{version}"
     if git("show-ref", "--verify", "--quiet", f"refs/tags/{tag}", check=False).returncode == 0:
         raise SystemExit(f"local tag already exists: {tag}")
     if (
@@ -126,49 +132,31 @@ def ensure_tag_available(version: str) -> None:
         raise SystemExit(f"remote tag already exists: {tag}")
 
 
-def confirm(version: str, *, push: bool) -> None:
-    commit = git("rev-parse", "HEAD").stdout.strip()
-    action = "create and push" if push else "create"
-    print(
-        f"Release tag: {stable_tag(version)}\n"
-        f"Moving tags: {major_tag(version)}, {minor_tag(version)}\n"
-        f"Commit: {commit}\n\n"
-        f"Ready to {action} release tags? [y/N]"
+def workflow_run_ids() -> set[str]:
+    result = run(
+        "gh",
+        "run",
+        "list",
+        "--repo",
+        REPO,
+        "--workflow",
+        "release.yml",
+        "--limit",
+        "10",
+        "--json",
+        "databaseId",
     )
-    answer = input().strip()
-    if answer not in {"y", "Y", "yes", "YES"}:
-        raise SystemExit("Aborted.")
+    return set(re.findall(r'"databaseId":(\d+)', result.stdout))
 
 
-def create_tags(version: str) -> None:
-    git("tag", "-a", stable_tag(version), "-m", f"Release {stable_tag(version)}")
-    git("tag", "-f", major_tag(version))
-    git("tag", "-f", minor_tag(version))
-
-
-def push_tags(version: str) -> None:
-    git("push", "origin", stable_tag(version))
-    git(
-        "push",
-        "--force",
-        "origin",
-        f"refs/tags/{major_tag(version)}",
-        f"refs/tags/{minor_tag(version)}",
-    )
-
-
-def stable_tag(version: str) -> str:
-    return f"v{version}"
-
-
-def major_tag(version: str) -> str:
-    major = version.split(".", maxsplit=1)[0]
-    return f"v{major}"
-
-
-def minor_tag(version: str) -> str:
-    major, minor, _patch = version.split(".")
-    return f"v{major}.{minor}"
+def wait_for_new_run(previous_ids: set[str]) -> str:
+    for _attempt in range(20):
+        current_ids = workflow_run_ids()
+        new_ids = current_ids - previous_ids
+        if new_ids:
+            return sorted(new_ids, reverse=True)[0]
+        time.sleep(1)
+    raise SystemExit("release workflow was dispatched, but the run id was not found")
 
 
 def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -178,6 +166,18 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
         check=check,
+    )
+
+
+def run(*args: str, stream: bool = False) -> subprocess.CompletedProcess[str]:
+    if stream:
+        return subprocess.run(list(args), cwd=ROOT, text=True, check=True)
+    return subprocess.run(
+        list(args),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
     )
 
 
