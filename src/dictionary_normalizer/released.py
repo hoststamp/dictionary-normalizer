@@ -18,8 +18,7 @@ def find_released_hashes_path(*anchors: Path) -> Path:
                 return candidate
     searched = ", ".join(str(anchor) for anchor in anchors) or str(Path.cwd())
     raise DictionaryNormalizerError(
-        f"{RELEASED_HASHES_FILENAME}: released hashes file not found "
-        f"near any anchor: {searched}"
+        f"{RELEASED_HASHES_FILENAME}: released hashes file not found near any anchor: {searched}"
     )
 
 
