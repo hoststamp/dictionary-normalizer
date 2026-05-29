@@ -50,11 +50,18 @@ def build_artifact(
     if refresh:
         refresh_sources(input_dir, manifest)
 
+    raw_server_blocklist = sorted(load_blocklist())
+    server_blocklist = normalize_words(raw_server_blocklist, settings=DEFAULT_SETTINGS)
+    dropped_server_blocklist = sorted(set(raw_server_blocklist) - set(server_blocklist))
+    if dropped_server_blocklist:
+        raise DictionaryNormalizerError(
+            "server blocklist entries dropped by normalization: "
+            + ", ".join(dropped_server_blocklist)
+        )
+
     blocklist_version_sources: dict[int, BlocklistSources] = {
         DEFAULT_BLOCKLIST_VERSION: {
-            SERVER_BLOCKLIST_SOURCE_ID: normalize_words(
-                sorted(load_blocklist()), settings=DEFAULT_SETTINGS
-            ),
+            SERVER_BLOCKLIST_SOURCE_ID: server_blocklist,
             SQIDS_BLOCKLIST_SOURCE_ID: load_sqids_blocklist(),
         }
     }

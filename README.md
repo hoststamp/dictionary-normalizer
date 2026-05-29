@@ -73,6 +73,9 @@ coverage report
 
 Coverage is enforced at 95% for the package under `src/`.
 
+Commit subjects use lowercase prefixes, such as `ci:`, `build:`, `deps:`,
+`docs:`, `fix:`, and `style:`, followed by a concise imperative summary.
+
 ## Release
 
 Release prep is separate from publishing. Use `scripts/prepare-release.py` on a

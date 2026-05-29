@@ -238,11 +238,11 @@ def _validate_dictionary_versions(
         if not categories:
             raise ValidationError(f"dictionary_versions.{version_key}.categories must not be empty")
         logical_categories: dict[str, list[str]] = {}
-        for category, ids in categories.items():
+        for category, word_ids in categories.items():
             if not isinstance(category, str) or not category:
                 raise ValidationError("category names must be non-empty strings")
             logical_categories[category] = _validate_word_ids(
-                ids, words, f"dictionary_versions.{version_key}.categories.{category}"
+                word_ids, words, f"dictionary_versions.{version_key}.categories.{category}"
             )
 
         expected_hash = dictionary_version_hash(version, label, refs, logical_categories)
